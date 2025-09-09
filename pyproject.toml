@@ -1,0 +1,37 @@
+[project]
+name = "transcriptor-video-audio"
+version = "0.1.0"
+description = "Aplicación de transcripción de video y audio con Whisper y PyQt6."
+requires-python = ">=3.12"
+dependencies = [
+    "PyQt6>=6.8",
+    "faster-whisper",
+    "torch",
+    "ffmpeg-python",
+    "pyannote.audio",
+    "whisperx",
+    "silero-vad",
+    "jiwer",
+    "pyqtgraph",
+    "soundfile",
+    "onnxruntime-directml; sys_platform == 'win32'"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-qt",
+    "pyinstaller",
+    "nuitka",
+    "ruff"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88

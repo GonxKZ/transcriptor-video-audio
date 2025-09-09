@@ -1,0 +1,16 @@
+PyQt6>=6.8
+faster-whisper
+torch
+ffmpeg-python
+pyannote.audio
+whisperx
+silero-vad
+jiwer
+pyqtgraph
+soundfile
+pytest
+pytest-qt
+pyinstaller
+nuitka
+ruff
+onnxruntime-directml; sys_platform == 'win32'

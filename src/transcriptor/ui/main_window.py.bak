@@ -1,0 +1,853 @@
+"""
+Main window for the Transcriptor application with modern Fluent/WinUI design.
+"""
+import os
+import sys
+from pathlib import Path
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, 
+    QLabel, QPushButton, QFileDialog, QProgressBar, QToolBar,
+    QStatusBar, QSizePolicy, QMenuBar, QMenu, QMessageBox, QApplication
+)
+from PyQt6.QtGui import QAction, QIcon, QPalette, QColor, QFont
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QSize
+from ..audio.preprocessor import AudioPreprocessor
+from ..utils.config import ConfigManager
+from .tour import TourManager, ContextualHelp
+from .editor import TranscriptionEditor, Segment, Word
+from .fluent_design import FluentDesignSystem
+from .windows_effects import WindowsFluentEffects
+
+class ThemeManager:
+    """Manages application themes (light/dark/auto) using Fluent Design System."""
+    
+    @staticmethod
+    def apply_theme(app, theme="auto"):
+        """Apply the specified theme to the application."""
+        if theme == "dark" or (theme == "auto" and ThemeManager._is_system_dark()):
+            ThemeManager._apply_fluent_theme(app, "dark")
+        else:
+            ThemeManager._apply_fluent_theme(app, "light")
+    
+    @staticmethod
+    def _is_system_dark():
+        """Check if the system is using a dark theme."""
+        # Simple check - in a real app, you'd want to check the OS setting
+        palette = QApplication.palette()
+        return palette.color(QPalette.ColorRole.Window).lightness() < 128
+    
+    @staticmethod
+    def _apply_fluent_theme(app, theme_name):
+        """Apply a Fluent Design theme to the application."""
+        colors = FluentDesignSystem.get_theme_colors(theme_name)
+        
+        # Create palette
+        palette = QPalette()
+        
+        # Set up the palette with Fluent colors
+        palette.setColor(QPalette.ColorRole.Window, colors["background"])
+        palette.setColor(QPalette.ColorRole.WindowText, colors["on_surface"])
+        palette.setColor(QPalette.ColorRole.Base, colors["surface"])
+        palette.setColor(QPalette.ColorRole.AlternateBase, colors["surface_variant"])
+        palette.setColor(QPalette.ColorRole.ToolTipBase, colors["on_surface"])
+        palette.setColor(QPalette.ColorRole.ToolTipText, colors["on_surface"])
+        palette.setColor(QPalette.ColorRole.Text, colors["on_surface"])
+        palette.setColor(QPalette.ColorRole.Button, colors["surface"])
+        palette.setColor(QPalette.ColorRole.ButtonText, colors["on_surface"])
+        palette.setColor(QPalette.ColorRole.BrightText, colors["error"])
+        palette.setColor(QPalette.ColorRole.Link, colors["primary"])
+        palette.setColor(QPalette.ColorRole.Highlight, colors["primary"])
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
+        
+        app.setPalette(palette)
+        
+        # Apply Fluent Design styles
+        app.setStyleSheet(ThemeManager._get_fluent_stylesheet(theme_name))
+    
+    @staticmethod
+    def _get_fluent_stylesheet(theme_name):
+        """Get the Fluent Design stylesheet for the specified theme."""
+        colors = FluentDesignSystem.get_theme_colors(theme_name)
+        spacing_md = FluentDesignSystem.get_spacing("md")
+        spacing_lg = FluentDesignSystem.get_spacing("lg")
+        border_radius = FluentDesignSystem.get_border_radius("md")
+        
+        return f"""
+            /* Global styles */
+            QMainWindow {{
+                background-color: {colors['background'].name()};
+                font-family: "Segoe UI", sans-serif;
+            }}
+            
+            /* Tooltips */
+            QToolTip {{
+                color: {colors['on_surface'].name()};
+                background-color: {colors['surface'].name()};
+                border: 1px solid {colors['outline'].name()};
+                border-radius: {border_radius}px;
+                padding: {spacing_md}px;
+                font-size: 12px;
+            }}
+            
+            /* Menu bar */
+            QMenuBar {{
+                background-color: {colors['surface'].name()};
+                padding: 0;
+                border: none;
+            }}
+            
+            QMenuBar::item {{
+                background: transparent;
+                padding: {spacing_md}px {spacing_lg}px;
+                color: {colors['on_surface'].name()};
+            }}
+            
+            QMenuBar::item:selected {{
+                background: {colors['secondary'].name()};
+            }}
+            
+            QMenuBar::item:pressed {{
+                background: {colors['primary'].name()};
+                color: white;
+            }}
+            
+            /* Menus */
+            QMenu {{
+                background-color: {colors['surface'].name()};
+                border: 1px solid {colors['outline'].name()};
+                border-radius: {border_radius}px;
+                padding: {spacing_md}px 0;
+            }}
+            
+            QMenu::item {{
+                padding: {spacing_md}px {spacing_lg}px;
+                color: {colors['on_surface'].name()};
+            }}
+            
+            QMenu::item:selected {{
+                background-color: {colors['secondary'].name()};
+            }}
+            
+            QMenu::item:disabled {{
+                color: {colors['on_surface_variant'].name()};
+            }}
+            
+            QMenu::separator {{
+                height: 1px;
+                background: {colors['outline'].name()};
+                margin: {spacing_md}px 0;
+            }}
+            
+            /* Toolbars */
+            QToolBar {{
+                background-color: {colors['surface'].name()};
+                border: none;
+                padding: {spacing_md}px;
+                spacing: {spacing_md}px;
+            }}
+            
+            /* Buttons */
+            QPushButton {{
+                background-color: {colors['primary'].name()};
+                color: white;
+                border: none;
+                border-radius: {border_radius}px;
+                padding: {spacing_md}px {spacing_lg}px;
+                font-size: 14px;
+                font-weight: 600;
+                min-height: 32px;
+            }}
+            
+            QPushButton:hover {{
+                background-color: {colors['primary_hover'].name()};
+            }}
+            
+            QPushButton:pressed {{
+                background-color: {colors['primary_pressed'].name()};
+            }}
+            
+            QPushButton:disabled {{
+                background-color: {colors['secondary'].name()};
+                color: {colors['on_surface_variant'].name()};
+            }}
+            
+            QPushButton#secondary {{
+                background-color: {colors['secondary'].name()};
+                color: {colors['on_surface'].name()};
+            }}
+            
+            QPushButton#secondary:hover {{
+                background-color: {colors['surface_variant'].name()};
+            }}
+            
+            /* Labels */
+            QLabel#panel-title {{
+                font-size: 16px;
+                font-weight: 600;
+                padding: {spacing_md}px 0;
+                border-bottom: 1px solid {colors['outline'].name()};
+                color: {colors['on_surface'].name()};
+            }}
+            
+            /* Progress bars */
+            QProgressBar {{
+                border: 1px solid {colors['outline'].name()};
+                border-radius: {border_radius}px;
+                text-align: center;
+                background-color: {colors['secondary'].name()};
+                height: 20px;
+            }}
+            
+            QProgressBar::chunk {{
+                background-color: {colors['primary'].name()};
+                border-radius: {border_radius - 1}px;
+            }}
+            
+            /* Scrollbars */
+            QScrollBar:vertical {{
+                border: none;
+                background: {colors['secondary'].name()};
+                width: 14px;
+                margin: 0;
+            }}
+            
+            QScrollBar::handle:vertical {{
+                background: {colors['surface_variant'].name()};
+                border-radius: 7px;
+                min-height: 20px;
+            }}
+            
+            QScrollBar::handle:vertical:hover {{
+                background: {colors['primary'].name()};
+            }}
+            
+            QScrollBar::sub-line:vertical, QScrollBar::add-line:vertical {{
+                border: none;
+                background: none;
+                height: 0;
+            }}
+            
+            QScrollBar::sub-page:vertical, QScrollBar::add-page:vertical {{
+                background: none;
+            }}
+        """
+
+class ProjectArea(QWidget):
+    """Project area showing file queue and project status with Fluent Design."""
+    
+    file_added = pyqtSignal(str)
+    
+    def __init__(self):
+        super().__init__()
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Set up the project area UI with Fluent Design."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(
+            FluentDesignSystem.get_spacing("lg"),
+            FluentDesignSystem.get_spacing("lg"),
+            FluentDesignSystem.get_spacing("lg"),
+            FluentDesignSystem.get_spacing("lg")
+        )
+        layout.setSpacing(FluentDesignSystem.get_spacing("md"))
+        
+        # Title
+        title = QLabel("Project Files")
+        title.setObjectName("panel-title")
+        title.setFont(FluentDesignSystem.get_font("title_small"))
+        layout.addWidget(title)
+        
+        # File list area (placeholder)
+        self.file_list = QLabel("No files added yet")
+        self.file_list.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.file_list.setFont(FluentDesignSystem.get_font("body_medium"))
+        self.file_list.setStyleSheet(f"""
+            QLabel {{
+                border: 2px dashed {FluentDesignSystem.get_theme_colors()["outline"].name()};
+                border-radius: {FluentDesignSystem.get_border_radius("md")}px;
+                padding: {FluentDesignSystem.get_spacing("xl")}px;
+                color: {FluentDesignSystem.get_theme_colors()["on_surface_variant"].name()};
+                background-color: {FluentDesignSystem.get_theme_colors()["surface_variant"].name()};
+            }}
+        """)
+        layout.addWidget(self.file_list)
+        
+        # Add file button
+        self.add_file_btn = QPushButton("Add Audio/Video File")
+        self.add_file_btn.setFont(FluentDesignSystem.get_font("button"))
+        self.add_file_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.add_file_btn.clicked.connect(self.add_file)
+        self.add_file_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {FluentDesignSystem.get_theme_colors()["primary"].name()};
+                color: white;
+                border: none;
+                border-radius: {FluentDesignSystem.get_border_radius("md")}px;
+                padding: {FluentDesignSystem.get_spacing("md")}px {FluentDesignSystem.get_spacing("lg")}px;
+                font-size: 14px;
+                font-weight: 600;
+                min-height: 32px;
+                transition: all 0.2s ease;
+            }}
+            
+            QPushButton:hover {{
+                background-color: {FluentDesignSystem.get_theme_colors()["primary_hover"].name()};
+                transform: scale(1.02);
+            }}
+            
+            QPushButton:pressed {{
+                background-color: {FluentDesignSystem.get_theme_colors()["primary_pressed"].name()};
+                transform: scale(0.98);
+            }}
+            
+            QPushButton:disabled {{
+                background-color: {FluentDesignSystem.get_theme_colors()["secondary"].name()};
+                color: {FluentDesignSystem.get_theme_colors()["on_surface_variant"].name()};
+            }}
+        """)
+        layout.addWidget(self.add_file_btn)
+        
+        layout.addStretch()
+    
+    def add_file(self):
+        """Open file dialog to add a new file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Select Audio or Video File",
+            "",
+            "Audio/Video Files (*.mp3 *.wav *.mp4 *.mov *.avi *.mkv *.flac *.m4a *.aac *.ogg *.wma *.flv *.webm)"
+        )
+        
+        if file_path:
+            self.file_added.emit(file_path)
+
+class ProcessPanel(QWidget):
+    """Process panel showing audio timeline and waveform with Fluent Design."""
+    
+    def __init__(self):
+        super().__init__()
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Set up the process panel UI with Fluent Design."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(
+            FluentDesignSystem.get_spacing("lg"),
+            FluentDesignSystem.get_spacing("lg"),
+            FluentDesignSystem.get_spacing("lg"),
+            FluentDesignSystem.get_spacing("lg")
+        )
+        layout.setSpacing(FluentDesignSystem.get_spacing("md"))
+        
+        # Title
+        title = QLabel("Audio Processing")
+        title.setObjectName("panel-title")
+        title.setFont(FluentDesignSystem.get_font("title_small"))
+        layout.addWidget(title)
+        
+        # Waveform visualization (placeholder)
+        self.waveform = QLabel("Audio Waveform Visualization")
+        self.waveform.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.waveform.setFont(FluentDesignSystem.get_font("body_medium"))
+        self.waveform.setStyleSheet(f"""
+            QLabel {{
+                border: 1px solid {FluentDesignSystem.get_theme_colors()["outline"].name()};
+                border-radius: {FluentDesignSystem.get_border_radius("md")}px;
+                padding: {FluentDesignSystem.get_spacing("xxxl")}px;
+                color: {FluentDesignSystem.get_theme_colors()["on_surface_variant"].name()};
+                background-color: {FluentDesignSystem.get_theme_colors()["surface_variant"].name()};
+            }}
+        """)
+        layout.addWidget(self.waveform)
+        
+        # Progress bar
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(True)
+        self.progress.setFont(FluentDesignSystem.get_font("caption"))
+        layout.addWidget(self.progress)
+        
+        # Control buttons
+        controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(FluentDesignSystem.get_spacing("md"))
+        
+        self.play_btn = QPushButton("▶ Play")
+        self.play_btn.setFont(FluentDesignSystem.get_font("button"))
+        self.play_btn.setMinimumWidth(100)
+        self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.play_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {FluentDesignSystem.get_theme_colors()["primary"].name()};
+                color: white;
+                border: none;
+                border-radius: {FluentDesignSystem.get_border_radius("md")}px;
+                padding: {FluentDesignSystem.get_spacing("md")}px {FluentDesignSystem.get_spacing("lg")}px;
+                font-size: 14px;
+                font-weight: 600;
+                transition: all 0.2s ease;
+            }}
+            
+            QPushButton:hover {{
+                background-color: {FluentDesignSystem.get_theme_colors()["primary_hover"].name()};
+                transform: scale(1.02);
+            }}
+            
+            QPushButton:pressed {{
+                background-color: {FluentDesignSystem.get_theme_colors()["primary_pressed"].name()};
+                transform: scale(0.98);
+            }}
+        """)
+        
+        self.pause_btn = QPushButton("⏸ Pause")
+        self.pause_btn.setFont(FluentDesignSystem.get_font("button"))
+        self.pause_btn.setMinimumWidth(100)
+        self.pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.pause_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {FluentDesignSystem.get_theme_colors()["secondary"].name()};
+                color: {FluentDesignSystem.get_theme_colors()["on_surface"].name()};
+                border: 1px solid {FluentDesignSystem.get_theme_colors()["outline"].name()};
+                border-radius: {FluentDesignSystem.get_border_radius("md")}px;
+                padding: {FluentDesignSystem.get_spacing("md")}px {FluentDesignSystem.get_spacing("lg")}px;
+                font-size: 14px;
+                font-weight: 600;
+                transition: all 0.2s ease;
+            }}
+            
+            QPushButton:hover {{
+                background-color: {FluentDesignSystem.get_theme_colors()["surface_variant"].name()};
+                transform: scale(1.02);
+            }}
+            
+            QPushButton:pressed {{
+                background-color: {FluentDesignSystem.get_theme_colors()["primary"].name()};
+                color: white;
+                transform: scale(0.98);
+            }}
+        """)
+        
+        self.stop_btn = QPushButton("⏹ Stop")
+        self.stop_btn.setFont(FluentDesignSystem.get_font("button"))
+        self.stop_btn.setMinimumWidth(100)
+        self.stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stop_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {FluentDesignSystem.get_theme_colors()["surface_variant"].name()};
+                color: {FluentDesignSystem.get_theme_colors()["on_surface"].name()};
+                border: 1px solid {FluentDesignSystem.get_theme_colors()["outline"].name()};
+                border-radius: {FluentDesignSystem.get_border_radius("md")}px;
+                padding: {FluentDesignSystem.get_spacing("md")}px {FluentDesignSystem.get_spacing("lg")}px;
+                font-size: 14px;
+                font-weight: 600;
+                transition: all 0.2s ease;
+            }}
+            
+            QPushButton:hover {{
+                background-color: {FluentDesignSystem.get_theme_colors()["error"].name()};
+                color: white;
+                transform: scale(1.02);
+            }}
+            
+            QPushButton:pressed {{
+                background-color: {FluentDesignSystem.get_theme_colors()["error"].name()};
+                color: white;
+                transform: scale(0.98);
+            }}
+        """)
+        
+        controls_layout.addWidget(self.play_btn)
+        controls_layout.addWidget(self.pause_btn)
+        controls_layout.addWidget(self.stop_btn)
+        controls_layout.addStretch()
+        
+        layout.addLayout(controls_layout)
+
+class MainWindow(QMainWindow):
+    """Main application window with modern Fluent/WinUI design."""
+    
+    def __init__(self):
+        super().__init__()
+        self.config_manager = ConfigManager()
+        self.audio_preprocessor = AudioPreprocessor(
+            os.path.join(os.getcwd(), "workspace")
+        )
+        self.current_file = None
+        self.tour_manager = TourManager(self)
+        self.contextual_help = ContextualHelp()
+        self.setup_ui()
+        self.setup_menu()
+        self.setup_toolbar()
+        self.setup_status_bar()
+        self.setup_tour()
+        self.apply_theme()
+    
+    def setup_ui(self):
+        """Set up the main UI layout with Fluent Design, Windows effects, and responsive design."""
+        self.setWindowTitle("Transcriptor de Video/Audio")
+        
+        # Set responsive window size based on screen dimensions
+        screen = QApplication.primaryScreen()
+        screen_size = screen.availableGeometry()
+        
+        # Use 80% of screen size, but not larger than 1400x900
+        width = min(int(screen_size.width() * 0.8), 1400)
+        height = min(int(screen_size.height() * 0.8), 900)
+        
+        self.resize(width, height)
+        
+        # Center the window on screen
+        self.move(
+            (screen_size.width() - width) // 2,
+            (screen_size.height() - height) // 2
+        )
+        
+        # Apply Windows Fluent effects if supported
+        if WindowsFluentEffects.is_supported():
+            WindowsFluentEffects.apply_mica_effect(self)
+        
+        # Create central widget with splitter
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(FluentDesignSystem.get_spacing("md"))
+        splitter.setStyleSheet(f"""
+            QSplitter::handle {{
+                background-color: {FluentDesignSystem.get_theme_colors()["outline"].name()};
+            }}
+            QSplitter::handle:hover {{
+                background-color: {FluentDesignSystem.get_theme_colors()["primary"].name()};
+            }}
+        """)
+        main_layout.addWidget(splitter)
+        
+        # Create the three main panels
+        self.project_area = ProjectArea()
+        self.project_area.file_added.connect(self.on_file_added)
+        
+        self.process_panel = ProcessPanel()
+        self.transcription_editor = TranscriptionEditor()
+        
+        # Add panels to splitter
+        splitter.addWidget(self.project_area)
+        splitter.addWidget(self.process_panel)
+        splitter.addWidget(self.transcription_editor)
+        
+        # Set initial sizes based on window width
+        total_width = width
+        project_width = max(200, int(total_width * 0.2))  # 20% or minimum 200px
+        process_width = int(total_width * 0.4)  # 40%
+        editor_width = total_width - project_width - process_width  # Remaining space
+        
+        splitter.setSizes([project_width, process_width, editor_width])
+        
+        # Set object names for styling
+        self.project_area.setObjectName("project-area")
+        self.process_panel.setObjectName("process-panel")
+        self.transcription_editor.setObjectName("transcription-editor")
+        
+        # Connect resize event for responsive adjustments
+        self.installEventFilter(self)
+    
+    def setup_menu(self):
+        """Set up the application menu with Fluent Design."""
+        menu_bar = self.menuBar()
+        menu_bar.setFont(FluentDesignSystem.get_font("body_medium"))
+        
+        # File menu
+        file_menu = menu_bar.addMenu("&File")
+        file_menu.setFont(FluentDesignSystem.get_font("body_medium"))
+        
+        import_action = QAction("&Import Audio/Video...", self)
+        import_action.setShortcut("Ctrl+I")
+        import_action.setFont(FluentDesignSystem.get_font("body_medium"))
+        import_action.triggered.connect(self.import_file)
+        file_menu.addAction(import_action)
+        
+        file_menu.addSeparator()
+        
+        exit_action = QAction("E&xit", self)
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.setFont(FluentDesignSystem.get_font("body_medium"))
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # Edit menu
+        edit_menu = menu_bar.addMenu("&Edit")
+        edit_menu.setFont(FluentDesignSystem.get_font("body_medium"))
+        
+        # View menu
+        view_menu = menu_bar.addMenu("&View")
+        view_menu.setFont(FluentDesignSystem.get_font("body_medium"))
+        
+        # Settings menu
+        settings_menu = menu_bar.addMenu("&Settings")
+        settings_menu.setFont(FluentDesignSystem.get_font("body_medium"))
+        
+        # Help menu
+        help_menu = menu_bar.addMenu("&Help")
+        help_menu.setFont(FluentDesignSystem.get_font("body_medium"))
+        
+        about_action = QAction("&About", self)
+        about_action.setFont(FluentDesignSystem.get_font("body_medium"))
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+    
+    def setup_toolbar(self):
+        """Set up the application toolbar with Fluent Design."""
+        toolbar = QToolBar("Main Toolbar")
+        toolbar.setMovable(False)
+        toolbar.setIconSize(QSize(16, 16))
+        toolbar.setStyleSheet(f"""
+            QToolBar {{
+                background-color: {FluentDesignSystem.get_theme_colors()["surface"].name()};
+                border: none;
+                padding: {FluentDesignSystem.get_spacing("sm")}px;
+                spacing: {FluentDesignSystem.get_spacing("sm")}px;
+            }}
+            
+            QToolButton {{
+                background: transparent;
+                border: none;
+                border-radius: {FluentDesignSystem.get_border_radius("sm")}px;
+                padding: {FluentDesignSystem.get_spacing("sm")}px;
+                margin: 0;
+            }}
+            
+            QToolButton:hover {{
+                background-color: {FluentDesignSystem.get_theme_colors()["secondary"].name()};
+            }}
+            
+            QToolButton:pressed {{
+                background-color: {FluentDesignSystem.get_theme_colors()["primary"].name()};
+                color: white;
+            }}
+        """)
+        self.addToolBar(toolbar)
+        
+        # Add actions to toolbar
+        import_action = QAction(QIcon.fromTheme("document-open"), "Import", self)
+        import_action.triggered.connect(self.import_file)
+        toolbar.addAction(import_action)
+    
+    def setup_status_bar(self):
+        """Set up the status bar with Fluent Design."""
+        self.status_bar = QStatusBar()
+        self.status_bar.setFont(FluentDesignSystem.get_font("caption"))
+        self.status_bar.setStyleSheet(f"""
+            QStatusBar {{
+                background-color: {FluentDesignSystem.get_theme_colors()["surface"].name()};
+                border-top: 1px solid {FluentDesignSystem.get_theme_colors()["outline"].name()};
+                padding: {FluentDesignSystem.get_spacing("sm")}px;
+            }}
+            
+            QLabel {{
+                color: {FluentDesignSystem.get_theme_colors()["on_surface_variant"].name()};
+            }}
+        """)
+        self.setStatusBar(self.status_bar)
+        self.status_bar.showMessage("Ready")
+    
+    def apply_theme(self):
+        """Apply the configured theme."""
+        theme = self.config_manager.settings.theme
+        ThemeManager.apply_theme(QApplication.instance(), theme)
+    
+    def import_file(self):
+        """Import an audio or video file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Select Audio or Video File",
+            "",
+            "Audio/Video Files (*.mp3 *.wav *.mp4 *.mov *.avi *.mkv *.flac *.m4a *.aac *.ogg *.wma *.flv *.webm)"
+        )
+        
+        if file_path:
+            self.on_file_added(file_path)
+    
+    def on_file_added(self, file_path):
+        """Handle file added event."""
+        self.current_file = file_path
+        self.status_bar.showMessage(f"Processing: {os.path.basename(file_path)}")
+        
+        # Simulate processing
+        self.process_panel.progress.setValue(30)
+        
+        # In a real implementation, we would:
+        # 1. Extract audio using AudioPreprocessor
+        # 2. Apply VAD segmentation
+        # 3. Perform transcription
+        # 4. Apply word alignment
+        # 5. Apply diarization (if enabled)
+        
+        # Simulate completion
+        QTimer.singleShot(2000, self.on_processing_complete)
+    
+    def on_processing_complete(self):
+        """Handle processing completion."""
+        self.process_panel.progress.setValue(100)
+        self.status_bar.showMessage("Processing complete")
+        
+        # Create sample segments for the advanced editor
+        sample_segments = [
+            Segment(
+                id=0,
+                start_time=0.0,
+                end_time=5.5,
+                words=[
+                    Word(text="This", start_time=0.0, end_time=0.3, confidence=0.95),
+                    Word(text="is", start_time=0.3, end_time=0.5, confidence=0.98),
+                    Word(text="a", start_time=0.5, end_time=0.6, confidence=0.99),
+                    Word(text="sample", start_time=0.6, end_time=1.0, confidence=0.97),
+                    Word(text="transcription", start_time=1.0, end_time=1.8, confidence=0.96),
+                    Word(text="of", start_time=1.8, end_time=2.0, confidence=0.98),
+                    Word(text="your", start_time=2.0, end_time=2.2, confidence=0.99),
+                    Word(text="audio", start_time=2.2, end_time=2.6, confidence=0.97),
+                    Word(text="file.", start_time=2.6, end_time=3.0, confidence=0.98),
+                ],
+                text="This is a sample transcription of your audio file."
+            ),
+            Segment(
+                id=1,
+                start_time=3.5,
+                end_time=9.2,
+                words=[
+                    Word(text="In", start_time=3.5, end_time=3.7, confidence=0.96),
+                    Word(text="the", start_time=3.7, end_time=3.8, confidence=0.99),
+                    Word(text="full", start_time=3.8, end_time=4.1, confidence=0.97),
+                    Word(text="application,", start_time=4.1, end_time=4.7, confidence=0.95),
+                    Word(text="this", start_time=4.7, end_time=5.0, confidence=0.98),
+                    Word(text="area", start_time=5.0, end_time=5.3, confidence=0.97),
+                    Word(text="would", start_time=5.3, end_time=5.6, confidence=0.96),
+                    Word(text="show", start_time=5.6, end_time=5.9, confidence=0.98),
+                    Word(text="the", start_time=5.9, end_time=6.0, confidence=0.99),
+                    Word(text="actual", start_time=6.0, end_time=6.4, confidence=0.97),
+                    Word(text="transcription", start_time=6.4, end_time=7.2, confidence=0.96),
+                    Word(text="with", start_time=7.2, end_time=7.4, confidence=0.98),
+                    Word(text="precise", start_time=7.4, end_time=7.9, confidence=0.97),
+                    Word(text="word", start_time=7.9, end_time=8.2, confidence=0.98),
+                    Word(text="timing", start_time=8.2, end_time=8.6, confidence=0.96),
+                    Word(text="and", start_time=8.6, end_time=8.8, confidence=0.99),
+                    Word(text="speaker", start_time=8.8, end_time=9.2, confidence=0.97),
+                ],
+                text="In the full application, this area would show the actual transcription with precise word timing and speaker identification."
+            )
+        ]
+        
+        # Load segments into the editor
+        self.transcription_editor.load_transcription(sample_segments)
+    def eventFilter(self, obj, event):
+        """Handle events for responsive design."""
+        if obj == self and event.type() == event.Type.Resize:
+            # Adjust UI elements based on new window size
+            self._adjust_layout_for_size()
+        return super().eventFilter(obj, event)
+    
+    def _adjust_layout_for_size(self):
+        """Adjust layout based on current window size."""
+        # Get current window dimensions
+        width = self.width()
+        
+        # Adjust project area width based on window size
+        splitter = self.centralWidget().layout().itemAt(0).widget()
+        if splitter and isinstance(splitter, QSplitter):
+            # For smaller windows, reduce project area width
+            if width < 1000:
+                project_width = max(150, int(width * 0.15))  # 15% or minimum 150px
+                process_width = int(width * 0.35)  # 35%
+                editor_width = width - project_width - process_width  # Remaining space
+                splitter.setSizes([project_width, process_width, editor_width])
+            elif width > 1600:
+                # For larger windows, increase project area width
+                project_width = min(300, int(width * 0.15))  # 15% or maximum 300px
+                process_width = int(width * 0.35)  # 35%
+                editor_width = width - project_width - process_width  # Remaining space
+                splitter.setSizes([project_width, process_width, editor_width])
+    
+    def show_about(self):
+        """Show the about dialog."""
+        QMessageBox.about(
+            "About Transcriptor",
+            (
+                "Transcriptor de Video/Audio\n\n"
+                "A high-fidelity transcription application using Whisper, PyQt6, and modern AI techniques.\n\n"
+                "Features:\n"
+                "• Local processing with Whisper Large v3\n"
+                "• Word-level alignment with WhisperX\n"
+                "• Speaker diarization with pyannote.audio\n"
+                "• Audio preprocessing with FFmpeg\n"
+                "• Modern Fluent/WinUI interface\n"
+            )
+    
+    def setup_tour(self):
+        """Set up the guided tour for new users with enhanced visuals."""
+        # Add tour steps with more detailed descriptions
+        self.tour_manager.add_step(
+            self.project_area.add_file_btn,
+            "Add Files",
+            "Start by adding audio or video files to transcribe. Click this button to select files from your computer. "
+            "The application supports a wide range of formats including MP3, WAV, MP4, MOV, AVI, and MKV."
+        )
+        
+        self.tour_manager.add_step(
+            self.process_panel.waveform,
+            "Audio Processing",
+            "This panel shows the audio waveform and processing progress. You can play, pause, and stop audio playback here. "
+            "The progress bar indicates the transcription status, and the waveform visualization helps you navigate through the audio."
+        )
+        
+        self.tour_manager.add_step(
+            self.transcription_editor.segments_tree,
+            "Transcription Structure",
+            "The left panel shows the transcription structure with segments and words. Each segment has a start and end time, "
+            "and you can see which speaker said what. Click on any segment to jump to that part of the audio."
+        )
+        
+        self.tour_manager.add_step(
+            self.transcription_editor.text_editor,
+            "Transcription Editor",
+            "The transcription appears here with precise timing. Words are color-coded by confidence level and speaker. "
+            "You can edit the text directly and adjust timing as needed. Right-click for additional options."
+        )
+        
+        # Add contextual help with more detailed information
+        self.contextual_help.add_help_text(
+            self.project_area.add_file_btn,
+            "Click to add audio or video files for transcription.\n"
+            "Supported formats: MP3, WAV, MP4, MOV, AVI, MKV, FLAC, M4A, AAC, OGG, WMA, FLV, WEBM"
+        )
+        
+        self.contextual_help.add_help_text(
+            self.process_panel.waveform,
+            "Visualizes the audio waveform and shows processing progress.\n"
+            "Click and drag to navigate through the audio. The highlighted area shows the current playback position."
+        )
+        
+        self.contextual_help.add_help_text(
+            self.process_panel.progress,
+            "Shows the transcription progress.\n"
+            "The bar fills as the transcription completes. Click 'Pause' to temporarily stop processing."
+        )
+        
+        self.contextual_help.add_help_text(
+            self.transcription_editor.segments_tree,
+            "Shows the transcription structure with segments and words.\n"
+            "Each row represents a segment with timing information. Expand segments to see individual words."
+        )
+        
+        self.contextual_help.add_help_text(
+            self.transcription_editor.text_editor,
+            "Edit the transcription text directly.\n"
+            "Words are color-coded by confidence (green = high, orange = medium, red = low). "
+            "Right-click for playback and editing options."
+        )
+        
+        # Start tour automatically for new users with a smoother introduction
+        if self.config_manager.settings.show_guided_tours:
+            QTimer.singleShot(2000, self.tour_manager.start_tour)            QTimer.singleShot(2000, self.tour_manager.start_tour)
